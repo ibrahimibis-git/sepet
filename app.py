@@ -1,34 +1,50 @@
+import json
 import os
+import re
 from flask import Flask, jsonify
 import requests
 
 app = Flask(__name__)
 
-URUN_ID = "226922510"
+TARGET_URL = "https://www.bershka.com/tr/uzun-kollu-dar-kesim-g%C3%B6mlek-c0p226924398.html?colorId=250"
 HEDEF_FIYAT = float(os.environ.get("HEDEF_FIYAT", "1500"))
 
 
 @app.route("/kontrol-et", methods=["GET"])
 def fiyat_kontrol_et():
-    api_url = f"https://www.bershka.com/itxrest/2/v1/shop/bershkatr/products/{URUN_ID}/stock"
-
     headers = {
-        "User-Agent": "BershkaApp/10.4.0 (iPhone; iOS 16.6; Scale/3.00)",
-        "Accept": "application/json",
-        "Accept-Language": "tr-TR",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept-Language": "tr-TR,tr;q=0.9",
     }
 
     try:
-        response = requests.get(api_url, headers=headers, timeout=15)
+        response = requests.get(TARGET_URL, headers=headers, timeout=15)
 
-        if response.status_code == 200:
-            data = response.json()
+        if response.status_code != 200:
+            return (
+                jsonify(
+                    {
+                        "durum": "BERSHKA_BAGLANTI_HATASI",
+                        "mesaj": f"Bershka sayfasi acilamadi. Kod: {response.status_code}",
+                    }
+                ),
+                response.status_code,
+            )
 
-            price_info = data.get("price", {})
-            guncel_fiyat = price_info.get("current", 0) / 100
+        # Sayfanýn içinde gizlenmiþ olan "price" verisini regex ile arýyoruz
+        # Bershka fiyatlarý JavaScript nesnesi içinde "price": 1299 veya "price": "1299.00" olarak tutar
+        html_content = response.text
 
-            if guncel_fiyat == 0:
-                guncel_fiyat = price_info.get("regular", 0) / 100
+        # 1. YÖNTEM: Sayfa içindeki fiyat kalýplarýný yakalama
+        match = re.search(r'"price"\s*:\s*"?(\d+[\.,]?\d*)"?', html_content)
+
+        if match:
+            fiyat_metni = match.group(1).replace(",", ".")
+            guncel_fiyat = float(fiyat_metni)
+
+            # Eðer Bershka fiyatý kuruþsuz büyük sayý verdiyse düzeltelim (Örn: 129900 -> 1299)
+            if guncel_fiyat > 10000:
+                guncel_fiyat = guncel_fiyat / 100
 
             if guncel_fiyat > 0 and guncel_fiyat <= HEDEF_FIYAT:
                 return (
@@ -37,7 +53,6 @@ def fiyat_kontrol_et():
                             "durum": "INDIRIM_YAKALANDI",
                             "guncel_fiyat_tl": guncel_fiyat,
                             "hedef_fiyat_tl": HEDEF_FIYAT,
-                            "mesaj": "Urun hedef fiyatin altina dustu!",
                         }
                     ),
                     200,
@@ -49,7 +64,7 @@ def fiyat_kontrol_et():
                         "durum": "BEKLEMEDE",
                         "guncel_fiyat_tl": guncel_fiyat,
                         "hedef_fiyat_tl": HEDEF_FIYAT,
-                        "mesaj": "Fiyat henuz dusmedi. Takibe devam.",
+                        "mesaj": "Fiyat henuz dusmedi.",
                     }
                 ),
                 200,
@@ -58,11 +73,11 @@ def fiyat_kontrol_et():
         return (
             jsonify(
                 {
-                    "durum": "BERSHKA_API_HATASI",
-                    "mesaj": f"Bershka Mobil API hata kodu dondu: {response.status_code}",
+                    "durum": "AYRISTIRMA_HATASI",
+                    "mesaj": "Fiyat verisi sayfa kaynaginda bulunamadi.",
                 }
             ),
-            response.status_code,
+            500,
         )
 
     except Exception as e:
@@ -74,7 +89,7 @@ def fiyat_kontrol_et():
 
 @app.route("/")
 def home():
-    return "Bershka Mobile API Tracker is Active.", 200
+    return "Bershka Safe Tracker is Active.", 200
 
 
 if __name__ == "__main__":
