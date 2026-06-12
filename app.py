@@ -4,17 +4,14 @@ import requests
 
 app = Flask(__name__)
 
-# Gonderdiginiz gomlegin kodunu ve Türkiye magaza parametrelerini kullaniyoruz
 URUN_ID = "226924398"
 HEDEF_FIYAT = float(os.environ.get("HEDEF_FIYAT", "1500"))
 
 
 @app.route("/kontrol-et", methods=["GET"])
 def fiyat_kontrol_et():
-    # Bershka Mobil Uygulamasinin kullandigi gercek, hafif ve engellenmeyen API url'i
     api_url = f"https://www.bershka.com/itxrest/2/v1/shop/bershkatr/products/{URUN_ID}/stock"
 
-    # Bershka mobil uygulamasindan geliyormus gibi gosteren temiz basliklar
     headers = {
         "User-Agent": "BershkaApp/10.4.0 (iPhone; iOS 16.6; Scale/3.00)",
         "Accept": "application/json",
@@ -22,19 +19,15 @@ def fiyat_kontrol_et():
     }
 
     try:
-        # Doðrudan Bershka'ya istek atiyoruz, proxy servislerine gerek yok!
         response = requests.get(api_url, headers=headers, timeout=15)
 
         if response.status_code == 200:
             data = response.json()
 
-            # Bershka veritabanindan gelen ham fiyati kurus bolmesinden kurtariyoruz (Orn: 129900 -> 1299.0)
-            # Inditex API veri yapisina gore fiyati guvenli sekilde çekiyoruz
             price_info = data.get("price", {})
             guncel_fiyat = price_info.get("current", 0) / 100
 
             if guncel_fiyat == 0:
-                # Alternatif fiyat dugumu kontrolu
                 guncel_fiyat = price_info.get("regular", 0) / 100
 
             if guncel_fiyat > 0 and guncel_fiyat <= HEDEF_FIYAT:
