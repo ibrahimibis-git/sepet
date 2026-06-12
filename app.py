@@ -1,10 +1,12 @@
 import os
+from bs4 import BeautifulSoup
 from flask import Flask, jsonify
 import requests
 
 app = Flask(__name__)
 
-URUN_ID = os.environ.get("URUN_ID", "226924398")
+# Gömleðin doðrudan web linki
+TARGET_URL = "https://www.bershka.com/tr/uzun-kollu-dar-kesim-g%C3%B6mlek-c0p226924398.html?colorId=250"
 HEDEF_FIYAT = float(os.environ.get("HEDEF_FIYAT", "1500"))
 SCRAPER_API_KEY = os.environ.get("SCRAPER_API_KEY")
 
@@ -22,21 +24,58 @@ def fiyat_kontrol_et():
             500,
         )
 
-    # Hedef Bershka Linki
-    target_url = f"https://www.bershka.com/itxrest/2/v1/shop/bershkatr/products/{URUN_ID}/stock"
-
-    # Istegi ScraperAPI uzerinden geciriyoruz. Onlar arka planda proxy ve header yonetimini yapiyor.
+    # Istegi ScraperAPI uzerinden dogrudan web sayfasina atiyoruz
     scraper_url = "https://api.scraperapi.com/"
-    payload = {"api_key": SCRAPER_API_KEY, "url": target_url}
+    payload = {"api_key": SCRAPER_API_KEY, "url": TARGET_URL}
 
     try:
-        # ScraperAPI bazen proxy dondugu icin istek 10-15 saniye surebilir, timeout'u uzun tutuyoruz
         response = requests.get(scraper_url, params=payload, timeout=30)
 
         if response.status_code == 200:
-            data = response.json()
-            guncel_fiyat = data.get("price", {}).get("current", 0) / 100
+            soup = BeautifulSoup(response.content, "html.parser")
 
+            # Inditex sitelerinde fiyat bilgisi genellikle bir meta etiketinde saklanir.
+            # <meta property="product:price:amount" content="1299.00"> yapisini ariyoruz.
+            meta_price = soup.find(
+                "meta", property="product:price:amount"
+            ) or soup.find("meta", attrs={"name": "twitter:data1"})
+
+            if meta_price:
+                # Meta etiketinin content degerini alip temizliyoruz
+                fiyat_metni = meta_price.get("content", "0").strip()
+                # Sadece rakamlari ve noktayi birakacak sekilde temizleme yapalim
+                fiyat_metni = (
+                    fiyat_metni.replace("TL", "")
+                    .replace(" ", "")
+                    .replace(",", ".")
+                )
+                guncel_fiyat = float(fiyat_metni)
+            else:
+                # Alternatif olarak sayfa icindeki fiyat class'ini aramayi deneyelim
+                # Inditex dinamik oldugu icin meta her zaman daha guvenlidir ama yedek olarak dursun
+                fiyat_elementi = soup.find(
+                    "span", {"class": "current-price-elem"}
+                )
+                if fiyat_elementi:
+                    fiyat_metni = (
+                        fiyat_elementi.text.strip()
+                        .replace("TL", "")
+                        .replace(".", "")
+                        .replace(",", ".")
+                    )
+                    guncel_fiyat = float(fiyat_metni.split()[0])
+                else:
+                    return (
+                        jsonify(
+                            {
+                                "durum": "HTML_AYRISTIRMA_HATASI",
+                                "mesaj": "Sayfa basariyla indirildi ancak icinde fiyat etiketi bulunamadi. Bershka tasarim degistirmis olabilir.",
+                            }
+                        ),
+                        500,
+                    )
+
+            # Fiyat Karsilastirma
             if guncel_fiyat > 0 and guncel_fiyat <= HEDEF_FIYAT:
                 return (
                     jsonify(
@@ -44,7 +83,7 @@ def fiyat_kontrol_et():
                             "durum": "INDIRIM_YAKALANDI",
                             "guncel_fiyat_tl": guncel_fiyat,
                             "hedef_fiyat_tl": HEDEF_FIYAT,
-                            "urun_kodu": URUN_ID,
+                            "mesaj": "Urun hedef fiyatin altina dustu!",
                         }
                     ),
                     200,
@@ -65,8 +104,8 @@ def fiyat_kontrol_et():
         return (
             jsonify(
                 {
-                    "durum": "PROXY_HATASI",
-                    "mesaj": f"ScraperAPI baglanti sorunu. Kod: {response.status_code}",
+                    "durum": "BERSHKA_BAGLANTI_HATASI",
+                    "mesaj": f"Bershka sayfasi acilamadi. Kod: {response.status_code}",
                 }
             ),
             response.status_code,
@@ -81,7 +120,7 @@ def fiyat_kontrol_et():
 
 @app.route("/")
 def home():
-    return "Bershka Proxy Bot Sistemi Aktif.", 200
+    return "Bershka Web Scraper Sistemi Aktif.", 200
 
 
 if __name__ == "__main__":
