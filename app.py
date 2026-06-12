@@ -4,7 +4,7 @@ import requests
 
 app = Flask(__name__)
 
-URUN_ID = "226924398"
+URUN_ID = "226922510"
 HEDEF_FIYAT = float(os.environ.get("HEDEF_FIYAT", "1500"))
 
 
