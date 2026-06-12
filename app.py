@@ -4,54 +4,58 @@ import requests
 
 app = Flask(__name__)
 
-# Config
 URUN_ID = os.environ.get("URUN_ID", "226924398")
 HEDEF_FIYAT = float(os.environ.get("HEDEF_FIYAT", "1500"))
 
 
 @app.route("/kontrol-et", methods=["GET"])
 def fiyat_kontrol_et():
+    # Bershka'nin web uzerinden dogrudan sorgulama yapabilecegimiz alternatif api url yapisi
     api_url = f"https://www.bershka.com/itxrest/2/v1/shop/bershkatr/products/{URUN_ID}/stock"
 
+    # Akamai ve Cloudflare engellerini asmak icin tarayici kimlik taklidi (Header Yapisi)
     headers = {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
-        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "tr-TR,tr;q=0.0,en-US;q=0.8,en;q=0.7",
+        "Referer": f"https://www.bershka.com/tr/",
+        "Origin": "https://www.bershka.com",
+        "Sec-Ch-Ua": '"Not-A.Brand";v="99", "Chromium";v="124", "Google Chrome";v="124"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
     }
 
     try:
-        response = requests.get(api_url, headers=headers, timeout=10)
+        # Bir oturum (session) baslatarak cookieleri otomatik yonetmesini sagliyoruz
+        session = requests.Session()
+        response = session.get(api_url, headers=headers, timeout=15)
 
         if response.status_code == 200:
             data = response.json()
             guncel_fiyat = data.get("price", {}).get("current", 0) / 100
 
-            # 1. DURUM: INDIRIM VAR
             if guncel_fiyat > 0 and guncel_fiyat <= HEDEF_FIYAT:
-                print(
-                    f"ALARM: INDIRIM YAKALANDI! Fiyat: {guncel_fiyat} TL, Hedef: {HEDEF_FIYAT} TL"
-                )
                 return (
                     jsonify(
                         {
                             "durum": "INDIRIM_YAKALANDI",
-                            "mesaj": "Urun hedef fiyatin altina dustu!",
                             "guncel_fiyat_tl": guncel_fiyat,
                             "hedef_fiyat_tl": HEDEF_FIYAT,
-                            "urun_kodu": URUN_ID,
                         }
                     ),
                     200,
                 )
 
-            # 2. DURUM: BEKLEMEDE
-            print(
-                f"Fiyat kontrol edildi: {guncel_fiyat} TL. Beklemede..."
-            )
             return (
                 jsonify(
                     {
                         "durum": "BEKLEMEDE",
-                        "mesaj": "Fiyat henuz dusmedi. Takibe devam...",
+                        "mesaj": "Fiyat henuz dusmedi.",
                         "guncel_fiyat_tl": guncel_fiyat,
                         "hedef_fiyat_tl": HEDEF_FIYAT,
                     }
@@ -59,7 +63,7 @@ def fiyat_kontrol_et():
                 200,
             )
 
-        print(f"Bershka API Hata Kodu: {response.status_code}")
+        # Hata devam ederse durum kodunu ekrana bas
         return (
             jsonify(
                 {
@@ -67,29 +71,19 @@ def fiyat_kontrol_et():
                     "mesaj": f"Bershka sunucusu hata kodu dondu: {response.status_code}",
                 }
             ),
-            400,
+            response.status_code,
         )
 
     except Exception as e:
-        print(f"Sistem Hatasi: {str(e)}")
         return (
-            jsonify(
-                {
-                    "durum": "SISTEM_HATASI",
-                    "mesaj": "Kod calisirken bir hata olustu.",
-                    "detay": str(e),
-                }
-            ),
+            jsonify({"durum": "SISTEM_HATASI", "detay": str(e)}),
             500,
         )
 
 
 @app.route("/")
 def home():
-    return (
-        "Bershka Fiyat Takip Sistemi Aktif! Kontrol icin /kontrol-et sayfasina gidin.",
-        200,
-    )
+    return "Bershka Bot Sistemi Aktif.", 200
 
 
 if __name__ == "__main__":
