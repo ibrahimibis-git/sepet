@@ -4,16 +4,13 @@ import requests
 
 app = Flask(__name__)
 
-# --- YAPILANDIRMA AYARLARI ---
-# Render'da "Environment Variables" kýsmýndan yönetebilirsiniz.
-# Deðer girilmezse varsayýlan olarak gönderdiðin gömlek kodunu (226924398) kullanýr.
+# Config
 URUN_ID = os.environ.get("URUN_ID", "226924398")
 HEDEF_FIYAT = float(os.environ.get("HEDEF_FIYAT", "1500"))
 
 
 @app.route("/kontrol-et", methods=["GET"])
 def fiyat_kontrol_et():
-    # Bershka Türkiye stok/fiyat API linki
     api_url = f"https://www.bershka.com/itxrest/2/v1/shop/bershkatr/products/{URUN_ID}/stock"
 
     headers = {
@@ -26,22 +23,18 @@ def fiyat_kontrol_et():
 
         if response.status_code == 200:
             data = response.json()
-            # Bershka kuruþ cinsinden verir (Örn: 129900), 100'e bölerek TL yapýyoruz
             guncel_fiyat = data.get("price", {}).get("current", 0) / 100
 
-            # 1. DURUM: ÝNDÝRÝM VAR
+            # 1. DURUM: INDIRIM VAR
             if guncel_fiyat > 0 and guncel_fiyat <= HEDEF_FIYAT:
-                # Render loglarýna büyük harflerle uyarý basar
                 print(
-                    f"\n!!! ALARM !!! URUNDE INDIRIM VAR! Guncel Fiyat: {guncel_fiyat} TL (Hedef: {HEDEF_FIYAT} TL)\n"
+                    f"ALARM: INDIRIM YAKALANDI! Fiyat: {guncel_fiyat} TL, Hedef: {HEDEF_FIYAT} TL"
                 )
-
-                # Tarayýcý ekranýna vereceði yanýt
                 return (
                     jsonify(
                         {
                             "durum": "INDIRIM_YAKALANDI",
-                            "mesaj": "Müjde! Ürün hedef fiyatýn altýna düþtü!",
+                            "mesaj": "Urun hedef fiyatin altina dustu!",
                             "guncel_fiyat_tl": guncel_fiyat,
                             "hedef_fiyat_tl": HEDEF_FIYAT,
                             "urun_kodu": URUN_ID,
@@ -50,15 +43,15 @@ def fiyat_kontrol_et():
                     200,
                 )
 
-            # 2. DURUM: FÝYAT HENÜZ DÜÞMEDÝ
+            # 2. DURUM: BEKLEMEDE
             print(
-                f"Fiyat kontrol edildi: {guncel_fiyat} TL. Hedef fiyat ({HEDEF_FIYAT} TL) henüz aþýlmadý."
+                f"Fiyat kontrol edildi: {guncel_fiyat} TL. Beklemede..."
             )
             return (
                 jsonify(
                     {
                         "durum": "BEKLEMEDE",
-                        "mesaj": "Fiyat henüz düþmedi. Takibe devam...",
+                        "mesaj": "Fiyat henuz dusmedi. Takibe devam...",
                         "guncel_fiyat_tl": guncel_fiyat,
                         "hedef_fiyat_tl": HEDEF_FIYAT,
                     }
@@ -66,25 +59,24 @@ def fiyat_kontrol_et():
                 200,
             )
 
-        # 3. DURUM: BERSHKA SUNUCUSU HATA VERDÝ
         print(f"Bershka API Hata Kodu: {response.status_code}")
         return (
             jsonify(
                 {
                     "durum": "BERSHKA_HATASI",
-                    "mesaj": f"Bershka sunucusu hata kodu döndürdü: {response.status_code}",
+                    "mesaj": f"Bershka sunucusu hata kodu dondu: {response.status_code}",
                 }
             ),
             400,
         )
 
     except Exception as e:
-        print(f"Sistem Hatasý: {str(e)}")
+        print(f"Sistem Hatasi: {str(e)}")
         return (
             jsonify(
                 {
                     "durum": "SISTEM_HATASI",
-                    "mesaj": "Kod çalýþýrken bir hata oluþtu.",
+                    "mesaj": "Kod calisirken bir hata olustu.",
                     "detay": str(e),
                 }
             ),
@@ -92,16 +84,14 @@ def fiyat_kontrol_et():
         )
 
 
-# Ana sayfa (Render'ýn sitenin açýk olduðunu anlamasý için)
 @app.route("/")
 def home():
     return (
-        "Bershka Fiyat Takip Sistemi Aktif! Kontrol için /kontrol-et sayfasýna gidin.",
+        "Bershka Fiyat Takip Sistemi Aktif! Kontrol icin /kontrol-et sayfasina gidin.",
         200,
     )
 
 
 if __name__ == "__main__":
-    # Render'ýn dinamik port hatasýný (status 1) engellemek için bu yapý þarttýr
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
