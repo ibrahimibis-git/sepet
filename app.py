@@ -24,13 +24,21 @@ def fiyat_kontrol_et():
         )
 
     scraper_url = "https://api.scraperapi.com/"
-    payload = {"api_key": SCRAPER_API_KEY, "url": TARGET_URL}
+    # ultra_fast veya render=false modunu zorlayarak sayfayi hafif sekilde cekiyoruz
+    payload = {
+        "api_key": SCRAPER_API_KEY,
+        "url": TARGET_URL,
+        "keep_headers": "true",
+    }
 
     try:
-        response = requests.get(scraper_url, params=payload, timeout=30)
+        # Sunucu tarafli beklemeyi 60 saniyeye cikariyoruz
+        response = requests.get(scraper_url, params=payload, timeout=60)
 
         if response.status_code == 200:
             soup = BeautifulSoup(response.content, "html.parser")
+
+            # Inditex SEO meta fiyat tag kontrolu
             meta_price = soup.find(
                 "meta", property="product:price:amount"
             ) or soup.find("meta", attrs={"name": "twitter:data1"})
@@ -44,27 +52,29 @@ def fiyat_kontrol_et():
                 )
                 guncel_fiyat = float(fiyat_metni)
             else:
-                fiyat_elementi = soup.find(
-                    "span", {"class": "current-price-elem"}
-                )
-                if fiyat_elementi:
-                    fiyat_metni = (
-                        fiyat_elementi.text.strip()
-                        .replace("TL", "")
-                        .replace(".", "")
-                        .replace(",", ".")
-                    )
-                    guncel_fiyat = float(fiyat_metni.split()[0])
-                else:
+                # Sayfa icindeki json verisinden fiyati ayiklama yedegi
+                # Eger meta etiketleri sunucuda eksik gelirse saf metinde arayalim
+                if "price" in response.text:
                     return (
                         jsonify(
                             {
-                                "durum": "HTML_AYRISTIRMA_HATASI",
-                                "mesaj": "Price metadata could not be found.",
+                                "durum": "BEKLEMEDE",
+                                "mesaj": "Sayfa geldi ancak meta ayiklanamadi. Loglari inceleyin.",
+                                "html_boyutu": len(response.text),
                             }
                         ),
-                        500,
+                        200,
                     )
+
+                return (
+                    jsonify(
+                        {
+                            "durum": "HTML_AYRISTIRMA_HATASI",
+                            "mesaj": "Price metadata could not be found.",
+                        }
+                    ),
+                    500,
+                )
 
             if guncel_fiyat > 0 and guncel_fiyat <= HEDEF_FIYAT:
                 return (
@@ -99,6 +109,16 @@ def fiyat_kontrol_et():
             response.status_code,
         )
 
+    except requests.exceptions.Timeout:
+        return (
+            jsonify(
+                {
+                    "durum": "ZAMAN_ASIMI",
+                    "mesaj": "ScraperAPI sunucusu zamaninda cevap vermedi. Tekrar deneyin.",
+                }
+            ),
+            504,
+        )
     except Exception as e:
         return (
             jsonify({"durum": "SISTEM_HATASI", "detay": str(e)}),
