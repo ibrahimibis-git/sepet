@@ -1,4 +1,3 @@
-import json
 import os
 import re
 from flask import Flask, jsonify
@@ -25,24 +24,19 @@ def fiyat_kontrol_et():
                 jsonify(
                     {
                         "durum": "BERSHKA_BAGLANTI_HATASI",
-                        "mesaj": f"Bershka sayfasi acilamadi. Kod: {response.status_code}",
+                        "mesaj": f"Status code: {response.status_code}",
                     }
                 ),
                 response.status_code,
             )
 
-        # Sayfanýn içinde gizlenmiþ olan "price" verisini regex ile arýyoruz
-        # Bershka fiyatlarý JavaScript nesnesi içinde "price": 1299 veya "price": "1299.00" olarak tutar
         html_content = response.text
-
-        # 1. YÖNTEM: Sayfa içindeki fiyat kalýplarýný yakalama
         match = re.search(r'"price"\s*:\s*"?(\d+[\.,]?\d*)"?', html_content)
 
         if match:
             fiyat_metni = match.group(1).replace(",", ".")
             guncel_fiyat = float(fiyat_metni)
 
-            # Eðer Bershka fiyatý kuruþsuz büyük sayý verdiyse düzeltelim (Örn: 129900 -> 1299)
             if guncel_fiyat > 10000:
                 guncel_fiyat = guncel_fiyat / 100
 
@@ -74,7 +68,7 @@ def fiyat_kontrol_et():
             jsonify(
                 {
                     "durum": "AYRISTIRMA_HATASI",
-                    "mesaj": "Fiyat verisi sayfa kaynaginda bulunamadi.",
+                    "mesaj": "Price data not found in HTML.",
                 }
             ),
             500,
