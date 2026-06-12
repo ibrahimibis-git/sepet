@@ -6,34 +6,32 @@ app = Flask(__name__)
 
 URUN_ID = os.environ.get("URUN_ID", "226924398")
 HEDEF_FIYAT = float(os.environ.get("HEDEF_FIYAT", "1500"))
+SCRAPER_API_KEY = os.environ.get("SCRAPER_API_KEY")
 
 
 @app.route("/kontrol-et", methods=["GET"])
 def fiyat_kontrol_et():
-    # Bershka'nin web uzerinden dogrudan sorgulama yapabilecegimiz alternatif api url yapisi
-    api_url = f"https://www.bershka.com/itxrest/2/v1/shop/bershkatr/products/{URUN_ID}/stock"
+    if not SCRAPER_API_KEY:
+        return (
+            jsonify(
+                {
+                    "durum": "SISTEM_HATASI",
+                    "mesaj": "SCRAPER_API_KEY Render ortam degiskenlerine eklenmemis!",
+                }
+            ),
+            500,
+        )
 
-    # Akamai ve Cloudflare engellerini asmak icin tarayici kimlik taklidi (Header Yapisi)
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "tr-TR,tr;q=0.0,en-US;q=0.8,en;q=0.7",
-        "Referer": f"https://www.bershka.com/tr/",
-        "Origin": "https://www.bershka.com",
-        "Sec-Ch-Ua": '"Not-A.Brand";v="99", "Chromium";v="124", "Google Chrome";v="124"',
-        "Sec-Ch-Ua-Mobile": "?0",
-        "Sec-Ch-Ua-Platform": '"Windows"',
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-origin",
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
-    }
+    # Hedef Bershka Linki
+    target_url = f"https://www.bershka.com/itxrest/2/v1/shop/bershkatr/products/{URUN_ID}/stock"
+
+    # Istegi ScraperAPI uzerinden geciriyoruz. Onlar arka planda proxy ve header yonetimini yapiyor.
+    scraper_url = "https://api.scraperapi.com/"
+    payload = {"api_key": SCRAPER_API_KEY, "url": target_url}
 
     try:
-        # Bir oturum (session) baslatarak cookieleri otomatik yonetmesini sagliyoruz
-        session = requests.Session()
-        response = session.get(api_url, headers=headers, timeout=15)
+        # ScraperAPI bazen proxy dondugu icin istek 10-15 saniye surebilir, timeout'u uzun tutuyoruz
+        response = requests.get(scraper_url, params=payload, timeout=30)
 
         if response.status_code == 200:
             data = response.json()
@@ -46,6 +44,7 @@ def fiyat_kontrol_et():
                             "durum": "INDIRIM_YAKALANDI",
                             "guncel_fiyat_tl": guncel_fiyat,
                             "hedef_fiyat_tl": HEDEF_FIYAT,
+                            "urun_kodu": URUN_ID,
                         }
                     ),
                     200,
@@ -63,12 +62,11 @@ def fiyat_kontrol_et():
                 200,
             )
 
-        # Hata devam ederse durum kodunu ekrana bas
         return (
             jsonify(
                 {
-                    "durum": "BERSHKA_HATASI",
-                    "mesaj": f"Bershka sunucusu hata kodu dondu: {response.status_code}",
+                    "durum": "PROXY_HATASI",
+                    "mesaj": f"ScraperAPI baglanti sorunu. Kod: {response.status_code}",
                 }
             ),
             response.status_code,
@@ -83,7 +81,7 @@ def fiyat_kontrol_et():
 
 @app.route("/")
 def home():
-    return "Bershka Bot Sistemi Aktif.", 200
+    return "Bershka Proxy Bot Sistemi Aktif.", 200
 
 
 if __name__ == "__main__":
