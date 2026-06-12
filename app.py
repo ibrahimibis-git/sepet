@@ -5,7 +5,6 @@ import requests
 
 app = Flask(__name__)
 
-# Config - No Turkish characters allowed here
 TARGET_URL = "https://www.bershka.com/tr/uzun-kollu-dar-kesim-g%C3%B6mlek-c0p226924398.html?colorId=250"
 HEDEF_FIYAT = float(os.environ.get("HEDEF_FIYAT", "1500"))
 SCRAPER_API_KEY = os.environ.get("SCRAPER_API_KEY")
@@ -18,7 +17,7 @@ def fiyat_kontrol_et():
             jsonify(
                 {
                     "durum": "SISTEM_HATASI",
-                    "mesaj": "SCRAPER_API_KEY is missing in Render environment variables!",
+                    "mesaj": "SCRAPER_API_KEY is missing!",
                 }
             ),
             500,
@@ -32,8 +31,6 @@ def fiyat_kontrol_et():
 
         if response.status_code == 200:
             soup = BeautifulSoup(response.content, "html.parser")
-
-            # Look for standard SEO meta price tags
             meta_price = soup.find(
                 "meta", property="product:price:amount"
             ) or soup.find("meta", attrs={"name": "twitter:data1"})
@@ -47,7 +44,6 @@ def fiyat_kontrol_et():
                 )
                 guncel_fiyat = float(fiyat_metni)
             else:
-                # Backup selector
                 fiyat_elementi = soup.find(
                     "span", {"class": "current-price-elem"}
                 )
@@ -64,13 +60,12 @@ def fiyat_kontrol_et():
                         jsonify(
                             {
                                 "durum": "HTML_AYRISTIRMA_HATASI",
-                                "mesaj": "Price metadata could not be found on the page.",
+                                "mesaj": "Price metadata could not be found.",
                             }
                         ),
                         500,
                     )
 
-            # Price Comparison
             if guncel_fiyat > 0 and guncel_fiyat <= HEDEF_FIYAT:
                 return (
                     jsonify(
@@ -78,7 +73,6 @@ def fiyat_kontrol_et():
                             "durum": "INDIRIM_YAKALANDI",
                             "guncel_fiyat_tl": guncel_fiyat,
                             "hedef_fiyat_tl": HEDEF_FIYAT,
-                            "mesaj": "Urun hedef fiyatin altina dustu!",
                         }
                     ),
                     200,
@@ -88,7 +82,6 @@ def fiyat_kontrol_et():
                 jsonify(
                     {
                         "durum": "BEKLEMEDE",
-                        "mesaj": "Fiyat henuz dusmedi. Takibe devam...",
                         "guncel_fiyat_tl": guncel_fiyat,
                         "hedef_fiyat_tl": HEDEF_FIYAT,
                     }
@@ -100,7 +93,7 @@ def fiyat_kontrol_et():
             jsonify(
                 {
                     "durum": "BERSHKA_BAGLANTI_HATASI",
-                    "mesaj": f"Could not open Bershka page. Code: {response.status_code}",
+                    "mesaj": f"Connection code: {response.status_code}",
                 }
             ),
             response.status_code,
@@ -115,7 +108,7 @@ def fiyat_kontrol_et():
 
 @app.route("/")
 def home():
-    return "Bershka Web Scraper System is Active.", 200
+    return "System Active.", 200
 
 
 if __name__ == "__main__":
